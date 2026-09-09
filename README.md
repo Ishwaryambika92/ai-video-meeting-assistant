@@ -1,87 +1,284 @@
-# AI Video/Meeting Assistant
+# 🎥 AI Video & Meeting Assistant
 
-Turn a YouTube URL, meeting recording, or local audio/video file into a
-transcript, structured summary, action items, and a searchable chat
-interface — with TXT/PDF export.
+> An AI-powered system that transforms long video and meeting recordings into searchable transcripts, summaries, action items, decisions, follow-ups, and intelligent Q&A using RAG.
 
-```
-YouTube URL / Audio / Video
-    -> Audio extraction (yt-dlp / FFmpeg)
-    -> Chunking
-    -> Transcription (Whisper for English, Sarvam AI for Hindi/Hinglish)
-    -> Translation to clean English (if needed)
-    -> Structured summarization (Mistral)
-    -> Action items / decisions / questions (Mistral)
-    -> Embeddings (HuggingFace) -> ChromaDB
-    -> RAG chat
-    -> Streamlit UI + PDF/TXT report
-```
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
+![Gemini](https://img.shields.io/badge/LLM-Gemini-orange)
+![Whisper](https://img.shields.io/badge/Speech-Whisper-green)
+![ChromaDB](https://img.shields.io/badge/VectorDB-ChromaDB-purple)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-red?logo=streamlit)
+![RAG](https://img.shields.io/badge/AI-RAG-yellow)
 
-## Setup
+---
 
-1. **Install FFmpeg** and make sure it's on your PATH.
-   - Windows: `winget install ffmpeg` (then restart your terminal)
-   - macOS: `brew install ffmpeg`
-   - Linux: `apt install ffmpeg`
+## 📌 Overview
 
-2. **Install Python dependencies** (Python 3.11 or 3.12 recommended):
-   ```bash
-   pip install -r requirements.txt
-   ```
-   If you have an NVIDIA GPU and want CUDA-accelerated Whisper, install the
-   matching CUDA build of PyTorch first per https://pytorch.org/get-started/locally/ —
-   the app auto-detects and uses the GPU if `torch.cuda.is_available()`.
+The **AI Video & Meeting Assistant** converts long video or meeting recordings into useful, structured information.
 
-3. **Configure environment variables**:
-   ```bash
-   cp .env.example .env
-   ```
-   Then fill in `MISTRAL_API_KEY` (required for summarization/extraction/chat)
-   and `SARVAM_API_KEY` (only required if you'll transcribe Hindi/Hinglish).
+Instead of watching an entire recording manually, users can:
 
-4. **Run the app**:
-   ```bash
-   streamlit run main.py
-   ```
+- 🎙️ Generate transcripts
+- 🌍 Process multiple languages
+- 📝 Generate meeting summaries
+- ✅ Extract action items
+- 📌 Identify decisions
+- ❓ Find open questions
+- 🔄 Identify follow-ups
+- 💬 Ask questions about the meeting using RAG
+- 📄 Generate TXT/PDF reports
 
-## ⚠️ About the keys in the original upload
+The project combines **speech processing, Generative AI, embeddings, vector search, and RAG** into a single application.
 
-The `.env` file in the uploaded project contained real, live Mistral and
-Sarvam API keys in plaintext. Treat both as compromised — **rotate them
-in the Mistral and Sarvam dashboards** and put fresh keys only in your own
-local `.env` (which is already covered by the `.gitignore` below).
+---
 
-## Project layout
+## 🎯 Problem Statement
 
-```
-video-agent/
-  config.py              # env loading, logging, device detection
-  main.py                # Streamlit UI
-  test.py                # CLI smoke test for the audio+transcription pipeline
-  utils/
-    audio_processor.py   # YouTube download, WAV conversion, chunking
-  core/
-    transcriber.py       # Whisper (English) + Sarvam AI (Hindi/Hinglish)
-    translator.py         # Hindi/Hinglish -> clean English + transcript cleanup
-    summariser.py         # structured summary (title/overview/points/takeaways)
-    extractor.py           # action items / decisions / questions / follow-ups
-    vector_store.py        # chunking + embeddings + ChromaDB
-    rag_engine.py           # retrieval-augmented chat
-    report_generator.py     # TXT/PDF report export
-  .env.example
-  requirements.txt
-```
+Long meetings and video recordings contain important information such as:
 
-## Notes on changes from the uploaded project
+- Decisions
+- Tasks
+- Deadlines
+- Discussions
+- Questions
+- Responsibilities
 
-See the chat summary for the full list. Highlights:
-- `utils/audio_processor.py` had module-level code that downloaded a real
-  YouTube video on `import` — removed; every step is now an explicit
-  function call.
-- Sarvam AI transcription now calls the current `/speech-to-text` endpoint
-  (`model=saaras:v3`, `mode=transcribe|translate`) instead of the legacy
-  `/speech-to-text-translate` endpoint used by the original tutorial.
-- `test1.py` was a byte-for-byte duplicate of `core/transcriber.py` and was
-  removed.
-- Whisper device selection was already correct (CUDA if available, else
-  CPU) and has been preserved, now centralized in `config.get_device()`.
+Manually reviewing long recordings is time-consuming and important information can easily be missed.
+
+### 💡 Solution
+
+This system automatically processes the recording and converts it into searchable and structured knowledge.
+
+---
+
+## ✨ Key Features
+
+### 🎙️ Multilingual Transcription
+
+Supports:
+
+- English → Whisper
+- Indian languages → Sarvam AI
+- Auto Detect → Detects the spoken language
+
+The system preserves the selected/original language during transcription.
+
+### 📝 AI Summarization
+
+Gemini generates a structured summary containing the most important information from the recording.
+
+### ✅ Action Item Extraction
+
+Automatically identifies:
+
+- Task
+- Owner
+- Deadline
+- Status
+
+### 📌 Decision Extraction
+
+Extracts important decisions made during the meeting.
+
+### ❓ Open Questions
+
+Identifies questions that remain unanswered.
+
+### 🔄 Follow-ups
+
+Extracts follow-up tasks and future discussion points.
+
+### 💬 RAG-based Meeting Chat
+
+Users can ask questions about the transcript instead of manually searching through the entire recording.
+
+Example:
+
+```text
+Who is responsible for the backend integration?
+
+What decisions were made?
+
+What needs to be completed by Friday?
+
+The system retrieves relevant transcript chunks and generates an answer using Gemini.
+
+📄 Report Generation
+
+Meeting information can be exported into:
+
+TXT
+PDF
+
+🏗️ System Architecture
+
+                ┌─────────────────────┐
+                │   Video / Audio     │
+                │    / YouTube URL    │
+                └──────────┬──────────┘
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │ Audio Extraction    │
+                │ yt-dlp + FFmpeg     │
+                └──────────┬──────────┘
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │   Transcription    │
+                │ Whisper / Sarvam AI │
+                └──────────┬──────────┘
+                           │
+                           ▼
+                ┌─────────────────────┐
+                │ Transcript Cleaning │
+                │ & Language Handling │
+                └──────────┬──────────┘
+                           │
+                ┌──────────┴──────────┐
+                ▼                     ▼
+       ┌────────────────┐    ┌────────────────┐
+       │ Gemini AI      │    │ HuggingFace    │
+       │ Summarization  │    │ Embeddings     │
+       │ & Extraction   │    └───────┬────────┘
+       └───────┬────────┘            │
+               │                     ▼
+               │             ┌───────────────┐
+               │             │   ChromaDB    │
+               │             │ Vector Store  │
+               │             └───────┬───────┘
+               │                     │
+               │                     ▼
+               │             ┌───────────────┐
+               └────────────►│ RAG Question  │
+                             │    Answering   │
+                             └───────┬───────┘
+                                     │
+                                     ▼
+                            ┌─────────────────┐
+                            │    Streamlit    │
+                            │       UI        │
+                            └─────────────────┘
+
+🛠️ Tech Stack
+
+| Technology      | Purpose                                 |
+| --------------- | --------------------------------------- |
+| **Python**      | Core development                        |
+| **Streamlit**   | Web interface                           |
+| **Gemini**      | Summarization, extraction & RAG         |
+| **Whisper**     | English speech transcription            |
+| **Sarvam AI**   | Indian language transcription           |
+| **yt-dlp**      | YouTube/media processing                |
+| **FFmpeg**      | Audio extraction & processing           |
+| **HuggingFace** | Text embeddings                         |
+| **ChromaDB**    | Vector database                         |
+| **Pydantic**    | Structured AI outputs                   |
+| **uv**          | Python environment & package management |
+
+🌍 Multilingual Support
+
+The application supports multilingual speech transcription.
+
+Supported languages include:
+
+English • Telugu • Hindi • Tamil • Kannada • Malayalam • Marathi • Bengali • Gujarati • Punjabi • Hinglish
+
+Users can either:
+
+Select a specific supported language
+Use Auto Detect to identify the spoken language
+
+The system is designed to preserve the spoken language during transcription.
+
+💬 RAG-Based Question Answering
+
+The application allows users to ask questions about a processed meeting instead of manually searching through the transcript.
+
+Example Questions
+Who is responsible for the backend integration?
+
+What decisions were made?
+
+What are the important action items?
+
+What is the deadline?
+
+What topics were discussed?
+RAG Pipeline
+Transcript
+    ↓
+Split into chunks
+    ↓
+Generate embeddings
+    ↓
+Store in ChromaDB
+    ↓
+User Question
+    ↓
+Retrieve relevant information
+    ↓
+Gemini generates the answer
+
+RAG helps the system retrieve relevant information from the transcript before generating an answer.
+
+
+⚙️ Installation & Run
+1. Clone the Repository
+git clone https://github.com/Ishwaryambika92/ai-video-meeting-assistant.git
+cd ai-video-meeting-assistant
+2. Create Virtual Environment
+uv venv
+3. Activate Environment
+
+Windows:
+
+.venv\Scripts\activate
+4. Install Dependencies
+uv pip install -r requirements.txt
+5. Configure Environment Variables
+
+Create a .env file in the project root:
+
+GEMINI_API_KEY=your_gemini_api_key
+SARVAM_API_KEY=your_sarvam_api_key
+
+⚠️ Never share or commit your API keys to GitHub.
+
+6. Run the Application
+uv run streamlit run main.py
+
+Open the local Streamlit URL displayed in the terminal.
+
+🔒 Security
+
+Sensitive credentials and generated/local files are excluded from the GitHub repository using .gitignore.
+
+API keys are stored using environment variables instead of being hardcoded in the source code.
+
+Never commit:
+.env
+API keys
+Private credentials
+
+🚀 Future Enhancements:
+
+🧠 Persistent Meeting Memory
+🔍 Meeting-to-Meeting Comparison
+📊 Automatic Action-Item Tracking
+⚠️ Contradiction Detection
+⏱️ Timestamp-Based Evidence
+👥 Speaker Identification
+🌍 Improved Multilingual RAG
+☁️ Cloud Deployment
+
+
+👩‍💻 Author
+Ishwaryambika Patta
+
+AI/ML & Software Development Enthusiast
+
+⭐ Project
+
+AI Video & Meeting Assistant
+
+Turn long recordings into searchable, structured, and actionable knowledge.

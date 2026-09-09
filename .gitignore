@@ -1,0 +1,9 @@
+.env
+downloads/
+data/chroma/
+reports/*.pdf
+reports/*.txt
+__pycache__/
+*.pyc
+.venv/
+venv/

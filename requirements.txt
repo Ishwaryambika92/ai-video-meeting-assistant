@@ -1,43 +1,35 @@
-# ==============================================================
-# AI Video/Meeting Assistant - requirements.txt
-# Python 3.11 / 3.12 recommended (see note on Whisper below).
-# Install with: pip install -r requirements.txt
-# ==============================================================
+# ==============================================
+# AI Video & Meeting Assistant - requirements.txt
+# Python 3.11 recommended
+# ==============================================
 
 # ---- Frontend ----
 streamlit>=1.40.0
 
-# ---- YouTube / media download ----
+# ---- YouTube / Media ----
 yt-dlp>=2025.6.9
-
-# ---- Audio/video handling (requires FFmpeg installed on the system) ----
 pydub>=0.25.1
 
-# ---- Transcription (local, English) ----
-# openai-whisper is used directly (import whisper); torch pulls in the
-# correct CPU or CUDA build automatically via pip's platform resolution.
+# ---- Transcription ----
 openai-whisper>=20250625
 torch>=2.2.0
 
-# ---- Hindi/Hinglish transcription (Sarvam AI) & translation ----
+# ---- Gemini AI ----
+google-genai>=1.0.0
+
+# ---- Sarvam AI / Translation ----
 requests>=2.32.0
 deep-translator>=1.11.4
 
-# ---- LLM orchestration (LangChain LCEL + Mistral) ----
-langchain>=0.3.20
-langchain-core>=0.3.40
-langchain-mistralai>=0.2.4
-langchain-text-splitters>=0.3.5
-
-# ---- RAG: vector store + embeddings ----
+# ---- RAG / Vector Database ----
 chromadb>=0.5.20
 langchain-chroma>=0.2.0
 langchain-huggingface>=0.1.2
 sentence-transformers>=3.4.0
 
-# ---- PDF / TXT export ----
+# ---- PDF / TXT Export ----
 fpdf2>=2.8.2
 
-# ---- Core utilities ----
+# ---- Configuration / Validation ----
 python-dotenv>=1.0.1
 pydantic>=2.10.0

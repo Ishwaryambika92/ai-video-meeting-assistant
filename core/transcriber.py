@@ -49,23 +49,9 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+
+whisper = None  # type: ignore
 _whisper_import_error: Optional[Exception] = None
-try:
-    import whisper
-except ImportError as err:
-    _whisper_import_error = err
-    # Auto-resolve from local virtual environment if invoked via global/external Python
-    _venv_site_pkgs = Path(_PROJECT_ROOT) / ".venv" / "Lib" / "site-packages"
-    if _venv_site_pkgs.exists() and str(_venv_site_pkgs) not in sys.path:
-        sys.path.insert(0, str(_venv_site_pkgs))
-        try:
-            import whisper
-            _whisper_import_error = None
-        except ImportError as sub_err:
-            _whisper_import_error = sub_err
-            whisper = None  # type: ignore
-    else:
-        whisper = None  # type: ignore
 
 from config import (
     get_device,
@@ -304,6 +290,20 @@ def load_model():
         try:
             import whisper
             _whisper_import_error = None
+        except ImportError as err:
+            _whisper_import_error = err
+            # Auto-resolve from local virtual environment if invoked via global/external Python
+            _venv_site_pkgs = Path(_PROJECT_ROOT) / ".venv" / "Lib" / "site-packages"
+            if _venv_site_pkgs.exists() and str(_venv_site_pkgs) not in sys.path:
+                sys.path.insert(0, str(_venv_site_pkgs))
+                try:
+                    import whisper
+                    _whisper_import_error = None
+                except ImportError as sub_err:
+                    _whisper_import_error = sub_err
+                    whisper = None  # type: ignore
+            else:
+                whisper = None  # type: ignore
         except Exception as err:
             _whisper_import_error = err
             whisper = None

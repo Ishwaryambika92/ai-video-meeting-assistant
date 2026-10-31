@@ -30,51 +30,18 @@ if str(_ROOT) not in sys.path:
 
 import streamlit as st
 
+# --------------------------------------------------------------------------
+# Streamlit page configuration - Executed FIRST before any other operations
+# --------------------------------------------------------------------------
+st.set_page_config(
+    page_title="AI Video/Meeting Assistant",
+    page_icon="🎬",
+    layout="wide",
+)
+
 from config import get_logger, get_settings, validate_settings
 from core.auth import AuthService, User, get_auth_service
 from core.auth_ui import render_auth_page, render_user_profile_dropdown
-
-from core.extractor import (
-    ActionItem,
-    ExtractionError,
-    ExtractionResult,
-    extract_action_items,
-)
-
-from core.rag_engine import (
-    RagError,
-    ask,
-)
-
-from core.report_generator import (
-    ReportData,
-    build_pdf_report,
-    build_txt_report,
-    build_jpg_report,
-)
-
-from core.summariser import (
-    MeetingSummary,
-    SummarizationError,
-    summarize_transcript,
-)
-
-from core.transcriber import (
-    TranscriptionError,
-    transcribe_all,
-    transcribe_all_original,
-)
-
-from core.translator import (
-    TranslationError,
-    clean_transcript,
-    translate_to_clean_english,
-)
-
-from core.vector_store import (
-    VectorStoreError,
-    index_transcript,
-)
 
 import html
 import re
@@ -85,29 +52,9 @@ from core.dashboard_ui import (
     render_meeting_history,
     render_overview_dashboard,
 )
-from core.cross_meeting_rag import ask_cross_meetings
 from core.meeting_store import get_all_meetings, save_meeting
 
-from utils.audio_processor import (
-    AudioProcessingError,
-    cleanup_chunks,
-    is_youtube_url,
-    process_input,
-)
-
-
 logger = get_logger(__name__)
-
-
-# --------------------------------------------------------------------------
-# Streamlit page configuration
-# --------------------------------------------------------------------------
-
-st.set_page_config(
-    page_title="AI Video/Meeting Assistant",
-    page_icon="🎬",
-    layout="wide",
-)
 
 # --------------------------------------------------------------------------
 # Session state
@@ -1882,6 +1829,12 @@ def run_pipeline(
     language: str,
     chunk_minutes: int,
 ) -> None:
+    from utils.audio_processor import AudioProcessingError, cleanup_chunks, process_input
+    from core.transcriber import TranscriptionError, transcribe_all, transcribe_all_original
+    from core.translator import TranslationError, clean_transcript, translate_to_clean_english
+    from core.summariser import SummarizationError, summarize_transcript
+    from core.extractor import ExtractionError, extract_action_items
+    from core.vector_store import VectorStoreError, index_transcript
 
     session_id = uuid.uuid4().hex[:12]
     st.session_state["is_processing"] = True
@@ -2406,6 +2359,9 @@ with st.sidebar:
             icon=":material/visibility:",
             use_container_width=True,
         ):
+            from core.summariser import MeetingSummary
+            from core.extractor import ActionItem, ExtractionResult
+
             st.session_state.processed = True
             st.session_state.summary = MeetingSummary(
                 title="Q3 Product Strategy & AI Roadmap Alignment",
@@ -2546,6 +2502,7 @@ with st.sidebar:
 # --------------------------------------------------------------------------
 
 if process_clicked and source_value:
+    from utils.audio_processor import is_youtube_url
 
     if input_mode == "YouTube URL" and not is_youtube_url(source_value):
         st.error("Please enter a valid YouTube URL (e.g., https://www.youtube.com/watch?v=... or https://youtu.be/...).")
@@ -2811,6 +2768,8 @@ def _render_floating_ai_chat() -> None:
                         answer_text = ""
                         try:
                             with st.spinner("Synthesizing answer from cross-meeting memory..."):
+                                from core.cross_meeting_rag import ask_cross_meetings
+
                                 res = ask_cross_meetings(
                                     question=q,
                                     conversation_history=st.session_state.dashboard_chat_history[:-1],
@@ -2833,6 +2792,8 @@ def _render_floating_ai_chat() -> None:
                         st.session_state.chat_history.append(("user", q))
                         answer_text = ""
                         try:
+                            from core.rag_engine import RagError, ask
+
                             with st.spinner("Thinking..."):
                                 result = ask(
                                     session_id=st.session_state.session_id,
@@ -3282,6 +3243,13 @@ def _render_workspace_view() -> None:
             <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 20px;">Download the complete meeting summary, action items, and transcripts in your preferred format.</p>
             """,
             unsafe_allow_html=True,
+        )
+
+        from core.report_generator import (
+            ReportData,
+            build_pdf_report,
+            build_txt_report,
+            build_jpg_report,
         )
 
         report_data = ReportData(

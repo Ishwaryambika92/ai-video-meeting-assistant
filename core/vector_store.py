@@ -22,11 +22,6 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-try:
-    import torch
-    torch.set_num_threads(1)
-except Exception:
-    pass
 
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
@@ -41,16 +36,10 @@ if TYPE_CHECKING:
     from langchain_huggingface import HuggingFaceEmbeddings
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 else:
-    try:
-        from langchain_chroma import Chroma
-        from langchain_core.documents import Document
-        from langchain_huggingface import HuggingFaceEmbeddings
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
-    except ImportError:
-        Chroma = None
-        Document = None
-        HuggingFaceEmbeddings = None
-        RecursiveCharacterTextSplitter = None
+    Chroma = None
+    Document = None
+    HuggingFaceEmbeddings = None
+    RecursiveCharacterTextSplitter = None
 
 from config import CHROMA_DIR, get_device, get_logger, settings
 from core.transcriber import TranscriptSegment, _format_timestamp
@@ -65,6 +54,12 @@ class VectorStoreError(Exception):
 @lru_cache(maxsize=1)
 def _get_embeddings() -> Any:
     """Load (and cache) the HuggingFace embedding model on the best device."""
+    try:
+        import torch
+        torch.set_num_threads(1)
+    except Exception:
+        pass
+
     global HuggingFaceEmbeddings
     if HuggingFaceEmbeddings is None:
         try:
@@ -204,8 +199,12 @@ def get_retriever(session_id: str, k: int = settings.rag_top_k) -> Any:
 
 def delete_session(session_id: str) -> None:
     """Delete a session's vectors entirely (used when starting fresh)."""
+    global Chroma
     if Chroma is None:
-        return
+        try:
+            from langchain_chroma import Chroma
+        except Exception:
+            return
     try:
         store = Chroma(
             collection_name=_collection_name(session_id),

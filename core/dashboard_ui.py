@@ -21,7 +21,6 @@ import pandas as pd
 import streamlit as st
 
 from config import get_logger
-from core.cross_meeting_rag import ask_cross_meetings
 from core.extractor import ActionItem, ExtractionResult
 from core.meeting_store import (
     DashboardMetrics,
@@ -1016,6 +1015,8 @@ def render_decisions_and_memory(user_id: str | None = None) -> None:
                 target_ids = [m.id for m in all_meetings if m.title in selected_meets]
 
             with st.spinner("Synthesizing answers across meeting memory and transcripts..."):
+                from core.cross_meeting_rag import ask_cross_meetings
+
                 answer_result = ask_cross_meetings(
                     question=user_query.strip(),
                     selected_meeting_ids=target_ids,

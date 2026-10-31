@@ -1,7 +1,14 @@
-from mistralai.client import Mistral
+import sys
+from pathlib import Path
+
+_PROJECT_ROOT = str(Path(__file__).resolve().parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from google import genai
 from config import settings
 
-client = Mistral(api_key=settings.mistral_api_key)
+client = genai.Client(api_key=settings.gemini_api_key)
 
 transcript = """
 Today we discussed our AI Video Assistant project.
@@ -43,18 +50,13 @@ TRANSCRIPT:
 {transcript}
 """
 
-response = client.chat.complete(
-    model=settings.mistral_model,
-    messages=[
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ],
+response = client.models.generate_content(
+    model=settings.gemini_model,
+    contents=prompt,
 )
 
 print("=" * 60)
-print("MISTRAL SUMMARY TEST SUCCESS")
+print("GEMINI SUMMARY TEST SUCCESS")
 print("=" * 60)
-print(response.choices[0].message.content)
+print(response.text)
 print("=" * 60)

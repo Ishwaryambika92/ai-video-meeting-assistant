@@ -1,0 +1,23 @@
+[project]
+name = "video-agent"
+version = "0.1.0"
+description = "AI Video & Meeting Assistant"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-chroma>=1.1.0",
+    "soundfile>=0.14.0",
+    "tokenizers<=0.23.0",
+]
+
+[tool.pyright]
+include = ["."]
+exclude = [".venv", "**/__pycache__", "main.backup.py"]
+extraPaths = [".", "core", ".venv/Lib/site-packages", "D:/ISHU/Lib/site-packages"]
+
+[[tool.pyright.executionEnvironments]]
+root = "core"
+extraPaths = ["..", ".", "../.venv/Lib/site-packages", "D:/ISHU/Lib/site-packages"]
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+extraPaths = [".", "core", ".venv/Lib/site-packages", "D:/ISHU/Lib/site-packages"]

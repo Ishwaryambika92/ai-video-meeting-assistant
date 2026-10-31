@@ -1,21 +1,21 @@
-from mistralai.client import Mistral
+import sys
+from pathlib import Path
 
+_PROJECT_ROOT = str(Path(__file__).resolve().parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from google import genai
 from config import settings
 
-client = Mistral(api_key=settings.mistral_api_key)
+client = genai.Client(api_key=settings.gemini_api_key)
 
-response = client.chat.complete(
-    model="mistral-small-2603",
-    messages=[
-        {
-            "role": "user",
-            "content": "Explain artificial intelligence in one sentence."
-        }
-    ],
+response = client.models.generate_content(
+    model=settings.gemini_model,
+    contents="Explain artificial intelligence in one sentence.",
 )
 
 print("=" * 60)
-print("MISTRAL TEST SUCCESS")
+print("LLM TEST SUCCESS (GEMINI)")
 print("=" * 60)
-
-print(response.choices[0].message.content)
+print((response.text or "").strip())

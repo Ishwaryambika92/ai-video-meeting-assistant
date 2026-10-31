@@ -8,17 +8,25 @@ as a validated Pydantic object using Google Gemini structured output.
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
+
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from pydantic import BaseModel, Field
+import time
 
-from config import get_logger
+from config import get_logger, settings
 
 logger = get_logger(__name__)
 
-# Guard against extremely long transcripts.
-_SINGLE_PASS_CHAR_LIMIT = 60_000
+# Single-pass limit safely supporting up to 4+ hours of speech on Gemini models (1M token window)
+_SINGLE_PASS_CHAR_LIMIT = int(os.getenv("MAX_TRANSCRIPT_CHARS", "300000"))
+
 
 
 class MeetingSummary(BaseModel):
@@ -110,17 +118,32 @@ Transcript:
 """
 
     try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash-lite",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0,
-                response_mime_type="application/json",
-                response_schema=MeetingSummary,
-            ),
-        )
+        response = None
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0,
+                        response_mime_type="application/json",
+                        response_schema=MeetingSummary,
+                    ),
+                )
+                break
+            except Exception as exc:
+                is_transient = (
+                    isinstance(exc, errors.APIError) and (getattr(exc, "code", None) in (429, 500, 503) or getattr(exc, "status", "") in ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "INTERNAL"))
+                ) or any(phrase in str(exc).lower() for phrase in ("resource exhausted", "rate limit", "429", "503", "timeout", "overloaded"))
+                if is_transient and attempt < max_retries:
+                    wait_time = min(2 ** attempt, 8)
+                    logger.warning("Gemini summarization transient failure (%s). Retrying in %ds (attempt %d/%d)...", exc, wait_time, attempt, max_retries)
+                    time.sleep(wait_time)
+                else:
+                    raise
 
-        if not response.text:
+        if not response or not response.text:
             raise SummarizationError(
                 "Gemini returned an empty response."
             )
@@ -134,6 +157,7 @@ Transcript:
         raise SummarizationError(
             f"Gemini summarization failed: {exc}"
         ) from exc
+
 
     if not isinstance(result, MeetingSummary):
         raise SummarizationError(

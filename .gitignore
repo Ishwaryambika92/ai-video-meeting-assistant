@@ -1,9 +1,57 @@
+# ==============================================================================
+# Environment & Secrets (Never commit actual credentials)
+# ==============================================================================
 .env
-downloads/
-data/chroma/
-reports/*.pdf
-reports/*.txt
+.env*.local
+*.env
+
+# ==============================================================================
+# Python Bytecode, Caches & Virtual Environments
+# ==============================================================================
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
 .venv/
 venv/
+ENV/
+env/
+
+# ==============================================================================
+# Local Application Data, Vector Stores & Databases
+# ==============================================================================
+data/
+*.db
+*.sqlite3
+
+# ==============================================================================
+# Audio Downloads & Report Export Artifacts
+# ==============================================================================
+downloads/*.wav
+downloads/*.mp3
+downloads/*.mp4
+downloads/*.m4a
+downloads/*.webm
+reports/*.pdf
+reports/*.txt
+reports/*.jpg
+reports/*.jpeg
+!reports/.gitkeep
+!downloads/.gitkeep
+
+# ==============================================================================
+# Backups, Patches & Temporary Scratch Scripts
+# ==============================================================================
+*backup*
+*.patch
+scratch/
+
+# ==============================================================================
+# IDE, Editor & Operating System Artifacts
+# ==============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

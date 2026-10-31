@@ -31,7 +31,13 @@ Language behavior:
 from __future__ import annotations
 
 import os
+import sys
 import time
+from pathlib import Path
+
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -43,7 +49,23 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-import whisper
+_whisper_import_error: Optional[Exception] = None
+try:
+    import whisper
+except ImportError as err:
+    _whisper_import_error = err
+    # Auto-resolve from local virtual environment if invoked via global/external Python
+    _venv_site_pkgs = Path(_PROJECT_ROOT) / ".venv" / "Lib" / "site-packages"
+    if _venv_site_pkgs.exists() and str(_venv_site_pkgs) not in sys.path:
+        sys.path.insert(0, str(_venv_site_pkgs))
+        try:
+            import whisper
+            _whisper_import_error = None
+        except ImportError as sub_err:
+            _whisper_import_error = sub_err
+            whisper = None  # type: ignore
+    else:
+        whisper = None  # type: ignore
 
 from config import (
     get_device,
@@ -275,6 +297,24 @@ def load_model():
         device,
     )
 
+    global whisper
+    global _whisper_import_error
+
+    if whisper is None:
+        try:
+            import whisper
+            _whisper_import_error = None
+        except Exception as err:
+            _whisper_import_error = err
+            whisper = None
+
+    if whisper is None:
+        err_msg = (
+            f"OpenAI Whisper is not installed or failed to initialize ({_whisper_import_error}). "
+            "Please verify requirements.txt to run local Whisper transcription."
+        ) if _whisper_import_error else "OpenAI Whisper is not installed. Install requirements.txt to run local Whisper transcription."
+        raise TranscriptionError(err_msg)
+
     try:
 
         _model = whisper.load_model(
@@ -327,6 +367,7 @@ def detect_language(
         )
 
     model = load_model()
+    assert whisper is not None
 
     try:
 
@@ -351,9 +392,13 @@ def detect_language(
             )
         )
 
+        probs: dict[str, float] = (
+            probabilities[0] if isinstance(probabilities, list) else probabilities  # pyright: ignore[reportAssignmentType]
+        )
+
         detected_code = max(
-            probabilities,
-            key=probabilities.get,
+            probs,
+            key=lambda k: probs.get(k, 0.0),
         )
 
         logger.info(
@@ -420,13 +465,8 @@ def transcribe_chunk_whisper(
             verbose=False,
         )
 
-        return (
-            result.get(
-                "text",
-                "",
-            )
-            or ""
-        ).strip()
+        raw_text = result.get("text", "") if isinstance(result, dict) else ""
+        return str(raw_text or "").strip()
 
     except Exception as exc:
 
@@ -644,7 +684,7 @@ def transcribe_chunk_sarvam(
 
                 retry_after = int(
                     retry_after_header
-                )
+                ) if retry_after_header else min(2 ** attempt, 10)
 
             except (
                 TypeError,
@@ -1182,7 +1222,7 @@ def transcribe_all_original(
 
     if lang == "english":
 
-        results = [
+        whisper_results = [
             transcribe_chunk_whisper(
                 chunk,
                 translate=False,
@@ -1193,7 +1233,7 @@ def transcribe_all_original(
 
         return " ".join(
             text
-            for text in results
+            for text in whisper_results
             if text
         ).strip()
 
@@ -1214,7 +1254,7 @@ def transcribe_all_original(
             worker_count,
         )
 
-        results: list[
+        indic_results: list[
             tuple[int, str]
         ] = []
 
@@ -1239,17 +1279,17 @@ def transcribe_all_original(
                 future_map
             ):
 
-                results.append(
+                indic_results.append(
                     future.result()
                 )
 
-        results.sort(
+        indic_results.sort(
             key=lambda item: item[0]
         )
 
         return " ".join(
             text
-            for _, text in results
+            for _, text in indic_results
             if text
         ).strip()
 
@@ -1257,7 +1297,7 @@ def transcribe_all_original(
     # Fallback
     # ------------------------------------------------------------------------
 
-    results = [
+    fallback_results = [
         transcribe_chunk_whisper(
             chunk,
             translate=False,
@@ -1268,7 +1308,7 @@ def transcribe_all_original(
 
     return " ".join(
         text
-        for text in results
+        for text in fallback_results
         if text
     ).strip()
 

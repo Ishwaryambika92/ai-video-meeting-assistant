@@ -1,3 +1,11 @@
+try:
+    import pyarrow
+except ImportError:
+    pass
+
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 from core.vector_store import index_transcript
 from core.transcriber import TranscriptSegment
 

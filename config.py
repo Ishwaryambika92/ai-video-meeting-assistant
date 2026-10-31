@@ -13,12 +13,23 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+# Ensure module is safely registered in sys.modules during Streamlit hot-reloads
+if __name__ in sys.modules:
+    sys.modules.setdefault("config", sys.modules[__name__])
+
+try:
+    import pyarrow
+except ImportError:
+    pass
 
 from dotenv import load_dotenv
 
 load_dotenv()
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 
 # --------------------------------------------------------------------------
@@ -167,8 +178,23 @@ class Settings:
         )
     )
 
+    # ----------------------------------------------------------------------
+    # Authentication & Supabase
+    # ----------------------------------------------------------------------
+
+    supabase_url: str = os.getenv("SUPABASE_URL", "").strip()
+    supabase_anon_key: str = os.getenv("SUPABASE_ANON_KEY", "").strip()
+    supabase_service_role_key: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    auth_secret_key: str = os.getenv("AUTH_SECRET_KEY", "video-agent-auth-secret-key-change-in-prod").strip()
+    require_auth: bool = os.getenv("REQUIRE_AUTH", "true").lower() in ("true", "1", "yes")
+
 
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Return the global Settings singleton instance."""
+    return settings
 
 
 # --------------------------------------------------------------------------

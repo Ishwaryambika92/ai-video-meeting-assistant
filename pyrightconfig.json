@@ -1,0 +1,16 @@
+{
+  "include": [
+    "."
+  ],
+  "exclude": [
+    ".venv",
+    "**/__pycache__",
+    "main.backup.py"
+  ],
+  "extraPaths": [
+    ".",
+    "core",
+    ".venv/Lib/site-packages",
+    "D:/ISHU/Lib/site-packages"
+  ]
+}

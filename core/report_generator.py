@@ -7,23 +7,39 @@ bytes/strings, the Streamlit UI decides how to offer them for download.
 
 from __future__ import annotations
 
+import io
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-import io
 
-from fpdf import FPDF
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fpdf import FPDF
+else:
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        FPDF = None
+
 from PIL import Image, ImageDraw, ImageFont
 
 from core.extractor import ExtractionResult
 from core.summariser import MeetingSummary
 
 
-def _safe_pdf_text(text: str) -> str:
-    if text is None:
-        return ""
+class ReportError(Exception):
+    pass
 
-    text = str(text)
+
+def _safe_pdf_text(text: str) -> str:
+    if not text:
+        return ""
 
     replacements = {
         "–": "-",
@@ -190,6 +206,8 @@ def _add_section(
 
 
 def build_pdf_report(data: ReportData) -> bytes:
+    if FPDF is None:
+        raise ReportError("fpdf2 is not installed. Install requirements.txt to enable PDF export.")
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.set_margins(15, 15, 15)
@@ -309,15 +327,24 @@ def build_jpg_report(data: ReportData) -> bytes:
     action_items = data.extraction.action_items[:5]
     decisions = data.extraction.decisions[:5]
 
-    # Try common Windows fonts.
+    # Try common cross-platform fonts (Windows, Linux, macOS)
     font_paths = [
         "C:/Windows/Fonts/arial.ttf",
         "C:/Windows/Fonts/segoeui.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/Library/Fonts/Arial.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
     ]
 
     bold_paths = [
         "C:/Windows/Fonts/arialbd.ttf",
         "C:/Windows/Fonts/segoeuib.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
     ]
 
     font_path = next((p for p in font_paths if Path(p).exists()), None)
@@ -327,15 +354,24 @@ def build_jpg_report(data: ReportData) -> bytes:
         body_font = ImageFont.truetype(font_path, 28)
         small_font = ImageFont.truetype(font_path, 24)
     else:
-        body_font = ImageFont.load_default()
-        small_font = body_font
+        try:
+            body_font = ImageFont.load_default(size=28)
+            small_font = ImageFont.load_default(size=24)
+        except TypeError:
+            body_font = ImageFont.load_default()
+            small_font = body_font
 
     if bold_path:
         heading_font = ImageFont.truetype(bold_path, 34)
         title_font = ImageFont.truetype(bold_path, 42)
     else:
-        heading_font = body_font
-        title_font = body_font
+        try:
+            heading_font = ImageFont.load_default(size=34)
+            title_font = ImageFont.load_default(size=42)
+        except TypeError:
+            heading_font = body_font
+            title_font = body_font
+
 
     sections = []
 
@@ -385,7 +421,7 @@ def build_jpg_report(data: ReportData) -> bytes:
 
     height = max(height, 900)
 
-    image = Image.new("RGB", (width, height), "white")
+    image = Image.new("RGB", (width, int(height)), "white")
     draw = ImageDraw.Draw(image)
 
     y = padding

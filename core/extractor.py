@@ -9,14 +9,22 @@ the field is set to the literal string "Not specified".
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
+
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from pydantic import BaseModel, Field
+import time
 
-from config import get_logger
+from config import get_logger, settings
 
 logger = get_logger(__name__)
+
 
 NOT_SPECIFIED = "Not specified"
 
@@ -177,16 +185,31 @@ Transcript:
 """
 
     try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash-lite",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ExtractionResult,
-            ),
-        )
+        response = None
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=ExtractionResult,
+                    ),
+                )
+                break
+            except Exception as exc:
+                is_transient = (
+                    isinstance(exc, errors.APIError) and (getattr(exc, "code", None) in (429, 500, 503) or getattr(exc, "status", "") in ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "INTERNAL"))
+                ) or any(phrase in str(exc).lower() for phrase in ("resource exhausted", "rate limit", "429", "503", "timeout", "overloaded"))
+                if is_transient and attempt < max_retries:
+                    wait_time = min(2 ** attempt, 8)
+                    logger.warning("Gemini extraction transient failure (%s). Retrying in %ds (attempt %d/%d)...", exc, wait_time, attempt, max_retries)
+                    time.sleep(wait_time)
+                else:
+                    raise
 
-        if not response.text:
+        if not response or not response.text:
             raise ExtractionError(
                 "Gemini returned an empty response."
             )
@@ -202,6 +225,7 @@ Transcript:
         raise ExtractionError(
             f"Gemini extraction failed: {exc}"
         ) from exc
+
 
     if not isinstance(result, ExtractionResult):
         raise ExtractionError(

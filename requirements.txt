@@ -27,9 +27,14 @@ langchain-chroma>=0.2.0
 langchain-huggingface>=0.1.2
 sentence-transformers>=3.4.0
 
-# ---- PDF / TXT Export ----
+# ---- PDF / TXT / Image Export ----
 fpdf2>=2.8.2
+pillow>=10.0.0
 
 # ---- Configuration / Validation ----
 python-dotenv>=1.0.1
 pydantic>=2.10.0
+
+# ---- Authentication & Security ----
+bcrypt>=5.0.0
+supabase>=2.33.0

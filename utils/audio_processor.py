@@ -26,10 +26,14 @@ import subprocess
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
-from pydub import AudioSegment
-from pydub.exceptions import CouldntDecodeError
+try:
+    from pydub import AudioSegment
+    from pydub.exceptions import CouldntDecodeError
+except ImportError:
+    AudioSegment = None  # type: ignore
+    CouldntDecodeError = Exception  # type: ignore
 
 from config import DOWNLOAD_DIR, get_logger, settings
 
@@ -78,14 +82,34 @@ def download_youtube_audio(url: str, output_dir: Path = DOWNLOAD_DIR) -> str:
     the same video does not create duplicate downloads, and so Unicode /
     emoji-heavy titles never touch the filesystem.
     """
-    _ensure_ffmpeg_available()
+    try:
+        import yt_dlp
+        from yt_dlp.utils import DownloadError
+    except ImportError as exc:
+        raise AudioProcessingError(
+            "yt-dlp is not installed. Install it with `pip install yt-dlp` to download and process YouTube videos."
+        ) from exc
 
-    import yt_dlp
+    _ensure_ffmpeg_available()
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_template = str(output_dir / "%(id)s.%(ext)s")
 
-    ydl_opts = {
+    node_candidates = [
+        shutil.which("node"),
+        shutil.which("deno"),
+        "D:\\ISHU\\node.exe",
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Program Files (x86)\\nodejs\\node.exe",
+        "/usr/bin/node",
+        "/usr/local/bin/node",
+    ]
+    node_exe = next((p for p in node_candidates if p and Path(p).exists()), None)
+    js_runtimes: dict[str, Any] = {}
+    if node_exe and Path(node_exe).exists():
+        js_runtimes["node"] = {"path": node_exe}
+
+    ydl_opts: dict[str, Any] = {
         "format": "bestaudio/best",
         "outtmpl": output_template,
         "postprocessors": [
@@ -99,12 +123,24 @@ def download_youtube_audio(url: str, output_dir: Path = DOWNLOAD_DIR) -> str:
         "no_warnings": True,
         "noplaylist": True,
         "restrictfilenames": True,  # ASCII-only, Windows-safe filenames
+        "nopart": True,  # Prevent Windows file lock errors during .part rename
+        "socket_timeout": 30,  # Prevent hanging indefinitely on dropped connections
+        "retries": 3,
+        "fragment_retries": 3,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+            }
+        },
     }
+    if js_runtimes:
+        ydl_opts["js_runtimes"] = js_runtimes
+
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
             info = ydl.extract_info(url, download=False)
-            video_id = info.get("id", uuid.uuid4().hex)
+            video_id = info.get("id", uuid.uuid4().hex) if info else uuid.uuid4().hex
             expected_wav = output_dir / f"{video_id}.wav"
 
             if expected_wav.exists() and expected_wav.stat().st_size > 0:
@@ -120,11 +156,14 @@ def download_youtube_audio(url: str, output_dir: Path = DOWNLOAD_DIR) -> str:
                 )
             return str(expected_wav)
 
-    except yt_dlp.utils.DownloadError as exc:
+    except DownloadError as exc:
         message = str(exc)
-        # Clean up any partial files left behind.
+        # Clean up any partial files left behind safely on Windows.
         for leftover in output_dir.glob("*.part"):
-            leftover.unlink(missing_ok=True)
+            try:
+                leftover.unlink(missing_ok=True)
+            except OSError:
+                pass
 
         if "HTTP Error 403" in message:
             raise AudioProcessingError(
@@ -174,8 +213,11 @@ def convert_to_wav(input_path: str, output_dir: Optional[Path] = None) -> str:
     safe_stem = _sanitize_filename(src.stem)
     output_path = out_dir / f"{safe_stem}_{uuid.uuid4().hex[:8]}_converted.wav"
 
+    if AudioSegment is None:
+        raise AudioProcessingError("pydub is not installed. Install requirements.txt to convert audio.")
+
     try:
-        audio = AudioSegment.from_file(src)
+        audio = cast(Any, AudioSegment.from_file(src))
     except CouldntDecodeError as exc:
         raise AudioProcessingError(
             f"Could not decode '{src.name}'. The file may be corrupted or "
@@ -205,8 +247,11 @@ def chunk_audio(
     if not src.exists():
         raise AudioProcessingError(f"WAV file not found: {wav_path}")
 
+    if AudioSegment is None:
+        raise AudioProcessingError("pydub is not installed. Install requirements.txt to split audio into chunks.")
+
     try:
-        audio = AudioSegment.from_wav(src)
+        audio = cast(Any, AudioSegment.from_wav(src))
     except CouldntDecodeError as exc:
         raise AudioProcessingError(
             f"Could not read WAV file: {wav_path}"
@@ -227,7 +272,7 @@ def chunk_audio(
 
     for i, start in enumerate(range(0, len(audio), chunk_ms)):
 
-        segment = audio[start:start + chunk_ms]
+        segment = cast(Any, audio[start:start + chunk_ms])
 
         if len(segment) < min_chunk_ms:
             logger.debug(
@@ -300,6 +345,16 @@ def process_input(
         wav_path,
         chunk_seconds=30,
     )
+
+    # For local uploaded files, clean up intermediate converted WAV now that chunks exist
+    if not is_youtube_url(source):
+        try:
+            p = Path(wav_path)
+            if p.exists() and "_converted.wav" in p.name:
+                p.unlink(missing_ok=True)
+                logger.debug("Cleaned up intermediate converted WAV: %s", wav_path)
+        except OSError:
+            pass
 
     logger.info(
         "Audio ready - %d chunk(s) created.",

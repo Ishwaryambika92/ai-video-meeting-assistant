@@ -9,6 +9,7 @@ streamlit>=1.40.0
 # ---- YouTube / Media ----
 yt-dlp>=2025.6.9
 pydub>=0.25.1
+soundfile>=0.14.0
 
 # ---- Transcription ----
 openai-whisper>=20250625
@@ -23,9 +24,11 @@ deep-translator>=1.11.4
 
 # ---- RAG / Vector Database ----
 chromadb>=0.5.20
-langchain-chroma>=0.2.0
+langchain-chroma>=1.1.0
 langchain-huggingface>=0.1.2
 sentence-transformers>=3.4.0
+tokenizers<=0.23.3
+
 
 # ---- PDF / TXT / Image Export ----
 fpdf2>=2.8.2

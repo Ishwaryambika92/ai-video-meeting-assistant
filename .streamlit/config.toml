@@ -1,6 +1,7 @@
 [server]
 headless = true
 runOnSave = true
+maxUploadSize = 150
 
 [theme]
 base = "light"

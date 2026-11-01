@@ -30,6 +30,7 @@ TESTS = [
     ("Decisions Repository & Normalization", "test_decisions_repo.py"),
     ("Authentication & Security", "test_auth.py"),
     ("Report Generator (TXT, PDF, JPG)", "test_report_generator.py"),
+    ("Input Workflows & Audio Extraction", "test_input_workflows.py"),
 ]
 
 

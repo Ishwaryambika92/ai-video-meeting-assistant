@@ -101,6 +101,10 @@ def _init_state() -> None:
         "is_processing": False,
         "_last_upload_sig": None,
         "_last_upload_path": None,
+        "_last_upload_name": None,
+        "_last_upload_size": None,
+        "_active_input_mode": "YouTube URL",
+        "_last_youtube_url": None,
     }
 
 
@@ -1839,6 +1843,7 @@ def run_pipeline(
 
     session_id = uuid.uuid4().hex[:12]
     st.session_state["is_processing"] = True
+    st.session_state["processing_error"] = None
 
     chunk_paths: list[str] = []
 
@@ -2135,6 +2140,10 @@ def run_pipeline(
                 Path(source).unlink(missing_ok=True)
             except OSError:
                 pass
+        st.session_state["_last_upload_path"] = None
+        st.session_state["_last_upload_sig"] = None
+        st.session_state["_last_upload_name"] = None
+        st.session_state["_last_upload_size"] = None
 
 
 
@@ -2214,7 +2223,13 @@ with st.sidebar:
         ],
         horizontal=True,
         label_visibility="collapsed",
+        key="input_source_mode",
     )
+
+    # Clear stale errors when switching input methods
+    if st.session_state.get("_active_input_mode") != input_mode:
+        st.session_state["processing_error"] = None
+        st.session_state["_active_input_mode"] = input_mode
 
     source_value: str | None = None
 
@@ -2233,6 +2248,11 @@ with st.sidebar:
             ),
             key="youtube_url_input",
         )
+        prev_yt_url = st.session_state.get("_last_youtube_url")
+        if source_value != prev_yt_url:
+            if prev_yt_url is not None and source_value:
+                st.session_state.processing_error = None
+            st.session_state["_last_youtube_url"] = source_value
 
     # --------------------------------------------------------------
     # Upload
@@ -2251,6 +2271,7 @@ with st.sidebar:
                 "mkv",
                 "webm",
             ],
+            key="media_file_uploader",
         )
 
         if uploaded is not None:
@@ -2275,19 +2296,42 @@ with st.sidebar:
 
                     st.session_state["_last_upload_sig"] = upload_sig
                     st.session_state["_last_upload_path"] = new_temp_path
+                    st.session_state["_last_upload_name"] = uploaded.name
+                    st.session_state["_last_upload_size"] = uploaded.size
+                    st.session_state.processing_error = None
                     source_value = new_temp_path
                 else:
                     source_value = prev_path
+
+                size_mb = uploaded.size / (1024 * 1024)
+                st.success(
+                    f"Ready: **{uploaded.name}** ({size_mb:.1f} MB)",
+                    icon=":material/check_circle:",
+                )
         else:
             prev_path = st.session_state.get("_last_upload_path")
-            if prev_path:
-                try:
-                    Path(prev_path).unlink(missing_ok=True)
-                except OSError:
-                    pass
-                st.session_state["_last_upload_path"] = None
-                st.session_state["_last_upload_sig"] = None
-
+            if prev_path and Path(prev_path).exists() and Path(prev_path).stat().st_size > 0:
+                source_value = prev_path
+                prev_name = st.session_state.get("_last_upload_name", Path(prev_path).name)
+                prev_size = st.session_state.get("_last_upload_size", Path(prev_path).stat().st_size)
+                size_mb = prev_size / (1024 * 1024)
+                st.success(
+                    f"Ready: **{prev_name}** ({size_mb:.1f} MB)",
+                    icon=":material/check_circle:",
+                )
+                if st.button("Remove selected file", key="remove_selected_file_btn", icon=":material/close:"):
+                    try:
+                        Path(prev_path).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    st.session_state["_last_upload_path"] = None
+                    st.session_state["_last_upload_sig"] = None
+                    st.session_state["_last_upload_name"] = None
+                    st.session_state["_last_upload_size"] = None
+                    st.session_state.processing_error = None
+                    st.rerun()
+            else:
+                st.caption("Upload an audio or video file (MP4, MP3, WAV, M4A, MOV, MKV, WebM up to 300 MB).")
 
     # --------------------------------------------------------------
     # Language
@@ -2345,12 +2389,24 @@ with st.sidebar:
 
     st.markdown("<div style='margin-top: 18px;'></div>", unsafe_allow_html=True)
 
+    from utils.audio_processor import is_youtube_url
+
+    if input_mode == "YouTube URL":
+        is_ready = bool(source_value and is_youtube_url(source_value))
+    else:
+        is_ready = bool(source_value and Path(source_value).exists() and Path(source_value).stat().st_size > 0)
+
+    is_processing = bool(st.session_state.get("is_processing", False))
+
+    if is_processing:
+        st.info("Processing in progress... Please wait.", icon=":material/hourglass_top:")
+
     process_clicked = st.button(
-        "Process Meeting",
-        icon=":material/play_arrow:",
+        "Processing..." if is_processing else "Process Meeting",
+        icon=":material/hourglass_top:" if is_processing else ":material/play_arrow:",
         type="primary",
         use_container_width=True,
-        disabled=not source_value or bool(st.session_state.get("is_processing", False)),
+        disabled=not is_ready or is_processing,
     )
 
 
@@ -2460,6 +2516,17 @@ with st.sidebar:
 
             st.session_state.processing_error = None
 
+            prev_path = st.session_state.get("_last_upload_path")
+            if prev_path:
+                try:
+                    Path(prev_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            st.session_state["_last_upload_path"] = None
+            st.session_state["_last_upload_sig"] = None
+            st.session_state["_last_upload_name"] = None
+            st.session_state["_last_upload_size"] = None
+
             st.rerun()
 
     # --------------------------------------------------------------
@@ -2504,6 +2571,8 @@ with st.sidebar:
 
 if process_clicked and source_value:
     from utils.audio_processor import is_youtube_url
+
+    st.session_state.processing_error = None
 
     if input_mode == "YouTube URL" and not is_youtube_url(source_value):
         st.error("Please enter a valid YouTube URL (e.g., https://www.youtube.com/watch?v=... or https://youtu.be/...).")

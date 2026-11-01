@@ -55,14 +55,72 @@ def _sanitize_filename(name: str, max_len: int = 150) -> str:
     return name[:max_len]
 
 
-def _ensure_ffmpeg_available() -> None:
-    if shutil.which("ffmpeg") is None:
+def _find_ffmpeg() -> str | None:
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    candidates = [
+        r"D:\ISHU\ffmpeg-8.1.2-essentials_build\bin\ffmpeg.exe",
+        r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+        "/usr/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+    ]
+    for c in candidates:
+        if Path(c).exists():
+            return c
+    return None
+
+
+def _ensure_ffmpeg_available() -> str:
+    ffmpeg_bin = _find_ffmpeg()
+    if not ffmpeg_bin:
         raise AudioProcessingError(
             "FFmpeg was not found on PATH. Install it and make sure it is "
             "accessible from the command line (e.g. `winget install ffmpeg` "
             "on Windows, `brew install ffmpeg` on macOS, "
             "`apt install ffmpeg` on Linux)."
         )
+    return ffmpeg_bin
+
+
+def _detect_js_runtime() -> dict[str, Any]:
+    """Detect available JS runtimes (preferring Deno, then Node.js 22+)."""
+    # 1. Check for Deno
+    deno_candidates = [
+        shutil.which("deno"),
+        "C:\\Program Files\\deno\\deno.exe",
+        "/usr/bin/deno",
+        "/usr/local/bin/deno",
+    ]
+    deno_exe = next((p for p in deno_candidates if p and Path(p).exists()), None)
+    if deno_exe:
+        try:
+            ver_out = subprocess.check_output([deno_exe, "--version"], text=True, timeout=5)
+            logger.info("Found Deno runtime: %s", ver_out.splitlines()[0] if ver_out else "")
+            return {"deno": {"path": deno_exe}}
+        except Exception:
+            pass
+
+    # 2. Check for Node.js
+    node_candidates = [
+        shutil.which("node"),
+        "D:\\ISHU\\node.exe",
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Program Files (x86)\\nodejs\\node.exe",
+        "/usr/bin/node",
+        "/usr/local/bin/node",
+    ]
+    node_exe = next((p for p in node_candidates if p and Path(p).exists()), None)
+    if node_exe:
+        try:
+            ver_out = subprocess.check_output([node_exe, "--version"], text=True, timeout=5).strip()
+            logger.info("Found Node.js runtime (%s) at %s", ver_out, node_exe)
+            return {"node": {"path": node_exe}}
+        except Exception:
+            pass
+
+    return {}
 
 
 def is_youtube_url(source: str) -> bool:
@@ -95,19 +153,7 @@ def download_youtube_audio(url: str, output_dir: Path = DOWNLOAD_DIR) -> str:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_template = str(output_dir / "%(id)s.%(ext)s")
 
-    node_candidates = [
-        shutil.which("node"),
-        shutil.which("deno"),
-        "D:\\ISHU\\node.exe",
-        "C:\\Program Files\\nodejs\\node.exe",
-        "C:\\Program Files (x86)\\nodejs\\node.exe",
-        "/usr/bin/node",
-        "/usr/local/bin/node",
-    ]
-    node_exe = next((p for p in node_candidates if p and Path(p).exists()), None)
-    js_runtimes: dict[str, Any] = {}
-    if node_exe and Path(node_exe).exists():
-        js_runtimes["node"] = {"path": node_exe}
+    js_runtimes = _detect_js_runtime()
 
     ydl_opts: dict[str, Any] = {
         "format": "bestaudio/best",
@@ -129,13 +175,12 @@ def download_youtube_audio(url: str, output_dir: Path = DOWNLOAD_DIR) -> str:
         "fragment_retries": 3,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web"],
+                "player_client": ["mweb", "web", "android", "ios"],
             }
         },
     }
     if js_runtimes:
         ydl_opts["js_runtimes"] = js_runtimes
-
 
     try:
         with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
@@ -158,37 +203,52 @@ def download_youtube_audio(url: str, output_dir: Path = DOWNLOAD_DIR) -> str:
 
     except DownloadError as exc:
         message = str(exc)
-        # Clean up any partial files left behind safely on Windows.
+        # Clean up any partial files left behind safely on Windows/Linux.
         for leftover in output_dir.glob("*.part"):
             try:
                 leftover.unlink(missing_ok=True)
             except OSError:
                 pass
 
-        if "HTTP Error 403" in message:
+        lower_msg = message.lower()
+        if "http error 403" in lower_msg or "403: forbidden" in lower_msg:
             raise AudioProcessingError(
-                "YouTube returned HTTP 403 (Forbidden). This usually means "
-                "YouTube is blocking the request - try updating yt-dlp "
-                "(`pip install -U yt-dlp`) or wait and retry."
+                "YouTube returned HTTP 403 (Forbidden). YouTube frequently restricts requests "
+                "from cloud hosting providers (e.g., Streamlit Community Cloud) or datacenter IPs. "
+                "Please use the 'Upload file' tab to upload your recording directly."
             ) from exc
-        if "Sign in to confirm" in message or "not a bot" in message.lower():
+        if "sign in to confirm" in lower_msg or "not a bot" in lower_msg:
             raise AudioProcessingError(
-                "YouTube is requesting bot verification for this video. "
-                "Try a different video or supply cookies to yt-dlp."
+                "YouTube requires bot verification/sign-in for this video. "
+                "Please download the file locally and use the 'Upload file' tab."
             ) from exc
-        if "Requested format is not available" in message:
+        if "requested format is not available" in lower_msg or "no suitable format" in lower_msg:
             raise AudioProcessingError(
-                "No downloadable audio track was found for this URL."
+                "No compatible audio track was found for this YouTube video. "
+                "The video may be private, members-only, a livestream, or region-restricted."
+            ) from exc
+        if any(err_kw in lower_msg for err_kw in ["timed out", "connection reset", "network is unreachable", "getaddrinfo failed", "temporary failure in name resolution"]):
+            raise AudioProcessingError(
+                f"Network connection error contacting YouTube: {message}. "
+                "Please check your internet connection and retry."
+            ) from exc
+        if any(kw in lower_msg for kw in ["jsinterp", "javascript", "ejs", "deno", "challenge"]):
+            raise AudioProcessingError(
+                "YouTube extraction failed due to a JavaScript challenge failure. "
+                "A supported JavaScript runtime (Deno or Node.js 22+) is required for signature decoding."
             ) from exc
         raise AudioProcessingError(f"Failed to download YouTube audio: {message}") from exc
 
     except Exception as exc:  # noqa: BLE001 - surface a clean error to the UI
         msg = str(exc).lower()
-        if "jsinterp" in msg or "javascript" in msg or "deno" in msg or "nodejs" in msg:
+        if any(kw in msg for kw in ["jsinterp", "javascript", "ejs", "deno", "challenge"]):
             raise AudioProcessingError(
-                "yt-dlp needs a JavaScript runtime (Deno or Node.js) to "
-                "decode this video's signature and could not find one. "
-                "Install Node.js or Deno and try again."
+                "YouTube extraction failed due to a JavaScript challenge failure. "
+                "A supported JavaScript runtime (Deno or Node.js 22+) is required for signature decoding."
+            ) from exc
+        if any(err_kw in msg for err_kw in ["timed out", "connection reset", "network is unreachable", "getaddrinfo failed"]):
+            raise AudioProcessingError(
+                f"Network connection error contacting YouTube: {exc}. Please check your connection."
             ) from exc
         raise AudioProcessingError(f"Unexpected error downloading video: {exc}") from exc
 
@@ -198,9 +258,10 @@ def download_youtube_audio(url: str, output_dir: Path = DOWNLOAD_DIR) -> str:
 # --------------------------------------------------------------------------
 def convert_to_wav(input_path: str, output_dir: Optional[Path] = None) -> str:
     """Convert any audio/video file to a mono, 16kHz WAV suitable for
-    speech recognition. Returns the absolute path to the new WAV file.
+    speech recognition using memory-efficient FFmpeg direct streaming.
+    Returns the absolute path to the new WAV file.
     """
-    _ensure_ffmpeg_available()
+    ffmpeg_bin = _ensure_ffmpeg_available()
 
     src = Path(input_path)
     if not src.exists():
@@ -213,23 +274,50 @@ def convert_to_wav(input_path: str, output_dir: Optional[Path] = None) -> str:
     safe_stem = _sanitize_filename(src.stem)
     output_path = out_dir / f"{safe_stem}_{uuid.uuid4().hex[:8]}_converted.wav"
 
-    if AudioSegment is None:
-        raise AudioProcessingError("pydub is not installed. Install requirements.txt to convert audio.")
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-nostdin",
+        "-loglevel", "error",
+        "-i", str(src.resolve()),
+        "-vn",
+        "-ac", "1",
+        "-ar", "16000",
+        "-c:a", "pcm_s16le",
+        str(output_path.resolve()),
+    ]
 
     try:
-        audio = cast(Any, AudioSegment.from_file(src))
-    except CouldntDecodeError as exc:
+        res = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception as exc:
+        if output_path.exists():
+            output_path.unlink(missing_ok=True)
+        raise AudioProcessingError(f"FFmpeg execution failed: {exc}") from exc
+
+    if res.returncode != 0:
+        if output_path.exists():
+            output_path.unlink(missing_ok=True)
+        err = res.stderr.strip()
+        if "matches no streams" in err or "does not contain any stream" in err:
+            raise AudioProcessingError(f"'{src.name}' contains no audio track.")
         raise AudioProcessingError(
-            f"Could not decode '{src.name}'. The file may be corrupted or "
-            "in an unsupported format."
-        ) from exc
+            f"Could not convert '{src.name}' to WAV: {err or 'FFmpeg conversion error'}"
+        )
 
-    if len(audio) == 0:
-        raise AudioProcessingError(f"'{src.name}' contains no audio.")
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        if output_path.exists():
+            output_path.unlink(missing_ok=True)
+        raise AudioProcessingError(f"'{src.name}' contains no audio or output is empty.")
 
-    audio = audio.set_channels(1).set_frame_rate(16000)
-    audio.export(output_path, format="wav")
-    return str(output_path)
+    return str(output_path.resolve())
+
 
 
 # --------------------------------------------------------------------------

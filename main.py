@@ -108,17 +108,18 @@ def _init_state() -> None:
         if key not in st.session_state:
             st.session_state[key] = value
 
-    # Check query param for persistent session token across browser refreshes
-    auth_service = get_auth_service()
-    if st.session_state.get("authenticated_user") is None:
-        url_token = st.query_params.get("auth_token")
-        if url_token:
+    # One-time legacy auth_token ingestion and URL sanitization
+    url_token = st.query_params.get("auth_token")
+    if url_token:
+        auth_service = get_auth_service()
+        if st.session_state.get("authenticated_user") is None:
             valid_user = auth_service.validate_session(url_token)
             if valid_user:
                 st.session_state["authenticated_user"] = valid_user
                 st.session_state["auth_token"] = url_token
-            else:
-                st.query_params.pop("auth_token", None)
+        # Always purge auth_token from URL query parameters to prevent exposure
+        st.query_params.pop("auth_token", None)
+        st.rerun()
 
 
 _init_state()

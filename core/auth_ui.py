@@ -190,8 +190,7 @@ def _render_login_form(auth_service: AuthService) -> None:
 
             if result.success and result.user:
                 st.session_state["authenticated_user"] = result.user
-                if result.session_token and remember_me:
-                    st.query_params["auth_token"] = result.session_token
+                if result.session_token:
                     st.session_state["auth_token"] = result.session_token
                 st.toast(f"Welcome back, {result.user.name or result.user.email}!", icon="🎉")
                 st.rerun()
@@ -313,7 +312,6 @@ def _render_signup_form(auth_service: AuthService) -> None:
             if result.success and result.user:
                 st.session_state["authenticated_user"] = result.user
                 if result.session_token:
-                    st.query_params["auth_token"] = result.session_token
                     st.session_state["auth_token"] = result.session_token
                 st.success("Account created successfully! Welcome to Video Agent.")
                 st.toast("Registration complete!", icon="🚀")
